@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useStream } from '../../Context/StreamContext';
 import useSocket from "../../Hooks/useSocket";
 import { handleMuteUnmute, handleOpenCloseCamera } from '../../Utils/Buttons'
+import { addRemoteStream, removeRemoteStream } from '../../Utils/Stream';
+import { createPeerConnection } from '../../WebRTC/PeerConnection';
 import './Meeting.css';
 
 function Meeting() {
@@ -13,45 +15,61 @@ function Meeting() {
 
   const socket = useSocket(navigate);
 
-  const [otherUsersCount, setOtherUsersCount] = useState(0);
   const [gridSize, setGridSize] = useState({ rows: 1, columns: 1 });
-
 
   useEffect(() => {
     if (localStream && userVideo.current) {
       userVideo.current.srcObject = localStream;
     }
 
+    let peer;
+
     if (socket) {
-      // Fetch the user count and update the state
-      socket.on('user-count-updated', (count) => {
-        setOtherUsersCount(count - 1); // Subtract 1 for the current user
+      // Create the peer connection once for this client
+      peer = createPeerConnection(localStream, (remoteStream, remotePeerId) => {
+        addRemoteStream(remoteStream, remotePeerId, setRemoteStreams);
+      }, socket);
+
+      // Handle the event when a new user joins after this user
+      socket.on('new-user-joined', (remotePeerId) => {
+        // Use the existing peer instance to call the new user
+        const call = peer.call(remotePeerId, localStream);
+
+        call.on('stream', remoteStream => {
+          // Handle the remote stream here
+          addRemoteStream(remoteStream, remotePeerId, setRemoteStreams);
+        });
       });
 
-      // When a new user joins, fetch his video and add it to the remote streams
-      socket.on('user-joined', (newUserId) => {
-        // Add to remote stream array
+      // Handle the event when a user leaves the meeting
+      socket.on('user-left', (leftPeerId) => {
+        removeRemoteStream(leftPeerId, setRemoteStreams);
+      });
 
-      })
-
+      // Clean up on unmount
+      return () => {
+        if (peer) {
+          peer.destroy();
+        }
+      };
     }
+  }, [localStream, socket, setRemoteStreams]);
 
-  }, [localStream, socket]);
 
   useEffect(() => {
     const updateGridSize = () => {
-      const totalUsers = otherUsersCount + 1;
+      // Including the local user in the count
+      const totalUsers = remoteStreams.length + 1;
 
       let columns = Math.min(4, totalUsers);
       let rows = Math.ceil(totalUsers / columns);
-      
+
       setGridSize({ rows, columns });
     };
-  
+
     updateGridSize();
-  }, [otherUsersCount]);
-  
-  
+  }, [remoteStreams]);
+
 
   // Grid style based on computed rows and columns
   const gridStyle = {
@@ -80,9 +98,12 @@ function Meeting() {
           {/* Local video */}
           <video ref={userVideo} id="localVideo" autoPlay muted></video>
 
-          {/* Dynamically create video elements for other users */}
-          {[...Array(otherUsersCount)].map((_, index) => (
-            <video key={index} id={`remoteVideo-${index}`} autoPlay></video>
+          {/* Dynamically create video elements for remote users */}
+          {remoteStreams.map((remoteStream, index) => (
+            <video key={remoteStream.id} ref={videoRef => {
+              // Assign the remote stream to the video element
+              if (videoRef) videoRef.srcObject = remoteStream.stream;
+            }} id={`remoteVideo-${index}`} autoPlay></video>
           ))}
         </div>
       </div>

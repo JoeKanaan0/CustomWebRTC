@@ -3,11 +3,11 @@
  *
  * @param {MediaStream} stream The media stream containing the user's audio track.
  */
-const handleMuteUnmute = () => {
-    // if (stream) {
-    //     // Toggle the enabled state of the first audio track in the stream
-    //     stream.getAudioTracks()[0].enabled = !stream.getAudioTracks()[0].enabled;
-    // }
+const handleMuteUnmute = (stream) => {
+    if (stream) {
+        // Toggle the enabled state of the first audio track in the stream
+        stream.getAudioTracks()[0].enabled = !stream.getAudioTracks()[0].enabled;
+    }
 };
 
 /**
